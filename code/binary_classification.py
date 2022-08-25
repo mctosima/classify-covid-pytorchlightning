@@ -31,8 +31,8 @@ print(f'Train set size: {len(train_set)} | Val set size: {len(val_set)}')
 
 '''create dataloaders'''
 batch_size = 32
-train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_set, batch_size, shuffle=True, num_workers=4)
+train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=0)
+val_loader = DataLoader(val_set, batch_size, shuffle=True, num_workers=0)
 
 ''' show one batch of train_loader '''
 # plotonebatch = next(iter(train_loader))

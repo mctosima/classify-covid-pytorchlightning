@@ -13,64 +13,15 @@ from torch.utils.data import DataLoader, Dataset, random_split
 from pytorch_lightning import seed_everything, LightningModule, Trainer
 from sklearn.metrics import classification_report
 
-'''augmentation'''
-aug = transforms.Compose([
-    transforms.Resize(size=(224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-])
 
-'''load dataset'''
-dataset = torchvision.datasets.ImageFolder('data', transform=aug)
-
-'''split dataset into train and test'''
-train_size = int(np.floor(0.8 * len(dataset)))
-val_size = len(dataset) - train_size
-train_set, val_set = random_split(dataset, [train_size, val_size])
-print(f'Train set size: {len(train_set)} | Val set size: {len(val_set)}')
-
-'''create dataloaders'''
-batch_size = 32
-train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=4)
-val_loader = DataLoader(val_set, batch_size, shuffle=True, num_workers=4)
-
-''' show one batch of train_loader '''
-# plotonebatch = next(iter(train_loader))
-# plt.figure()
-# grid_img = torchvision.utils.make_grid(plotonebatch[0],8,4)
-# plt.imshow(grid_img.permute(1,2,0))
-# plt.show()
-
-''' Load Model '''
-model = models.resnet18()
-model.fc = nn.Sequential(
-    nn.Linear(model.fc.in_features, 224),
-    nn.ReLU(),
-    nn.Linear(224,1),
-)
-
-''' get predictions for single pass'''
-pred = model(next(iter(train_loader))[0])
-
-criterion = nn.BCEWithLogitsLoss()
-loss1p = criterion(pred.flatten(), next(iter(train_loader))[1].float())
-print(f'Loss for single pass: {loss1p}')
-
-''' get accuracy for single pass'''
-acc = torchmetrics.Accuracy()
-acc1p = acc(pred.flatten(), next(iter(train_loader))[1])
-print(f'Accuracy for single pass: {acc1p}')
-
-''' ------------------------------ '''
-''' Using PyTorch Lightning '''
-class OurClass(LightningModule):
+class OurModel(LightningModule):
     def __init__(self):
         super().__init__()
         
         # model architecture
         self.model = models.resnet18()
         self.model.fc = nn.Sequential(
-            nn.Linear(model.fc.in_features, 224),
+            nn.Linear(self.model.fc.in_features, 224),
             nn.ReLU(),
             nn.Linear(224,1),
         )
@@ -88,7 +39,7 @@ class OurClass(LightningModule):
     
         # loss curve and accuracy curve
         self.trainacc, self.valacc = [], []
-        self.trainloss, self.valloss = [], [0]
+        self.trainloss, self.valloss = [], []
 
         # Augmentation
         self.aug = transforms.Compose([
@@ -118,22 +69,49 @@ class OurClass(LightningModule):
         dl = DataLoader(self.train_set, self.batch_size, shuffle=True, num_workers=self.num_workers)
         return dl
     
-    def training_step(self,batch,batch_idx):
-        
-        pass
+    def training_step(self,batch,batch_idx): 
+        image, label = batch
+        pred = self(image)
+        loss = self.criterion(pred.flatten(), label.float())
+        acc = self.acc(pred.flatten(), label)
+        return {'loss': loss, 'acc': acc}
     
     def training_epoch_end(self,outputs):
-        pass
+        loss = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu().numpy()
+        acc = torch.stack([x['acc'] for x in outputs]).mean().detach().cpu().numpy()
+        self.trainloss.append(loss)
+        self.trainacc.append(acc)
     
     def val_dataloader(self):
         dl = DataLoader(self.val_set, self.batch_size, shuffle=True, num_workers=self.num_workers)
         return dl
     
     def val_step(self,batch,batch_idx):
-        pass
+        image, label = batch
+        pred = self(image)
+        loss = self.criterion(pred.flatten(), label.float())
+        acc = self.acc(pred.flatten(), label)
+        return {'loss': loss, 'acc': acc}
     
     def val_epoch_end(self,outputs):
-        pass
+        loss = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu().numpy()
+        acc = torch.stack([x['acc'] for x in outputs]).mean().detach().cpu().numpy()
+        self.trainloss.append(loss)
+        self.trainacc.append(acc)
+        print(f'Validation loss: {loss} | Validation accuracy: {acc}')
     
+model = OurModel()
+seed_everything(0)
+trainer = Trainer(gpus=1,
+                  max_epochs=1,
+                  progress_bar_refresh_rate=0,
+                  deterministic=True,
+                  accelerator='mps',
+                  precision=16,
+                  num_sanity_val_steps=2,
+                  limit_train_batches=20,
+                  limit_val_batches=5,
+                  )
+trainer.fit(model)
         
     
