@@ -1,0 +1,23 @@
+name: pytorch112_py38
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - pytorch-lightning=1.7.3
+  - pytorch
+  - torchvision
+  - opencv
+  - numpy=1.22.0
+  - matplotlib-base
+  - scipy
+  - natsort
+  - scikit-image
+  - coloredlogs
+  - deprecated
+  - pygments
+  - tensorboardx
+  - tqdm
+  - pandas
+  - torchmetrics
+  - scikit-learn
+prefix: /home/bestlabmct/miniconda3/envs/pytorch112_py38
