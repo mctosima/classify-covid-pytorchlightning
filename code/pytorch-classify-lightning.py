@@ -56,7 +56,7 @@ class OurModel(LightningModule):
         ])
             
         # load data
-        self.dataset = torchvision.datasets.ImageFolder('data', transform=self.aug)
+        self.dataset = torchvision.datasets.ImageFolder('data/MRI_Covid', transform=self.aug)
         self.train_size = int(np.floor(0.85 * len(self.dataset)))
         self.val_size = int(np.floor(0.05 * len(self.dataset)))
         self.test_size = len(self.dataset) - self.train_size - self.val_size
@@ -82,12 +82,9 @@ class OurModel(LightningModule):
         pred = self(image)
         loss = self.criterion(pred.flatten(), label.float())
         acc = self.acc(pred.flatten(), label)
-        
         #wandblogger
-        self.log('train/loss', loss)
-        self.log('train/acc', acc)
-        # wandb.log({'train/loss': loss, 'train/acc': acc})
-        
+        self.log('train/loss', loss, on_epoch=True, on_step=False)
+        self.log('train/acc', acc, on_epoch=True, on_step=False)
         return {'loss': loss, 'acc': acc}
     
     def training_epoch_end(self,outputs):
@@ -95,6 +92,7 @@ class OurModel(LightningModule):
         acc = torch.stack([x['acc'] for x in outputs]).mean().detach().cpu().numpy().round(2)
         self.trainloss.append(loss)
         self.trainacc.append(acc)
+
         print(f'Training loss: {loss} | Training accuracy: {acc}')
     
     def val_dataloader(self):
@@ -106,11 +104,9 @@ class OurModel(LightningModule):
         pred = self(image)
         loss = self.criterion(pred.flatten(), label.float())
         acc = self.acc(pred.flatten(), label)
-        
         # early stopping and wandblogger
-        self.log('val/acc', acc)
-        self.log('val/loss', loss)
-        
+        self.log('val/acc', acc, on_epoch=True, on_step=False)
+        self.log('val/loss', loss, on_epoch=True, on_step=False)        
         return {'loss': loss, 'acc': acc}
     
     def validation_epoch_end(self,outputs):
@@ -118,6 +114,7 @@ class OurModel(LightningModule):
         acc = torch.stack([x['acc'] for x in outputs]).mean().detach().cpu().numpy().round(2)
         self.valloss.append(loss)
         self.valacc.append(acc)
+        
         print(f'VALIDATING --> Validation loss: {loss} | Validation accuracy: {acc}')
     
     def test_dataloader(self):
