@@ -1,7 +1,23 @@
-name: base
+name: pytorch112_py38
 channels:
   - defaults
 dependencies:
-  - conda
-  - python=3.9
-prefix: /home/bestlabmct/miniconda3
+  - python=3.8
+  - pytorch
+  - torchvision
+  - opencv
+  - numpy=1.22.0
+  - matplotlib-base
+  - scipy
+  - natsort
+  - scikit-image
+  - coloredlogs
+  - deprecated
+  - pygments
+  - tensorboardx
+  - tqdm
+  - pandas
+  - torchmetrics
+  - scikit-learn
+  - albumentations
+prefix: /home/bestlabmct/miniconda3/envs/pytorch112_py38
