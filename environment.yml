@@ -20,4 +20,5 @@ dependencies:
   - torchmetrics
   - scikit-learn
   - albumentations
+  - black
 prefix: /home/bestlabmct/miniconda3/envs/pytorch112_py38
