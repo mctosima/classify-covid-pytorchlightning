@@ -150,7 +150,7 @@ class Resnet18Timm(LightningModule):
         return focal_loss.mean()
 
     def configure_optimizers(self):
-        opt = torch.Adam(self.parameters(), lr=self.lr)
+        opt = torch.optim.Adam(self.parameters(), lr=self.lr)
         scheduler = CosineAnnealingWarmRestarts(
             opt, T_0=5, T_mult=1, eta_min=1e-5, last_epoch=-1
         )
@@ -168,8 +168,9 @@ class Resnet18Timm(LightningModule):
     def training_step(self, batch, batch_idx):
         left, right, label = batch
         pred = self(left, right)
-        loss = self.focalloss(self.criterion(pred, label))
+        loss = self.focalloss(self.criterion(pred, label.float()))
         self.log("train_loss", loss, on_epoch=True, on_step=False)
+        return loss
 
     def training_epoch_end(self, outputs):
         pass
@@ -177,17 +178,18 @@ class Resnet18Timm(LightningModule):
     def val_dataloader(self):
         dl = DataLoader(
             DataReader(val_df, train_path, transform=aug),
-            shuffle=True,
+            shuffle=False,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
         )
         return dl
 
-    def val_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx):
         left, right, label = batch
         pred = self(left, right)
-        loss = self.focalloss(self.criterion(pred, label))
+        loss = self.focalloss(self.criterion(pred, label.float()))
         self.log("val_loss", loss, on_epoch=True, on_step=False)
+        return loss
 
     def val_epoch_end(self, outputs):
         pass
@@ -195,7 +197,7 @@ class Resnet18Timm(LightningModule):
     def test_dataloader(self):
         dl = DataLoader(
             DataReader(val_df, train_path, transform=aug),
-            shuffle=True,
+            shuffle=False,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
         )
@@ -216,13 +218,31 @@ class Resnet18Timm(LightningModule):
         kappa = metrics.cohen_kappa_score(gt, pr > th)
         f1 = metrics.f1_score(gt, pr > th, average="micro")
         auc = metrics.roc_auc_score(gt, pr)
+        acc = metrics.roc_auc_score(gt, pr > th)
         final_score = (kappa + f1 + auc) / 3
-        return kappa, f1, auc, final_score
+        return kappa, f1, auc, final_score, acc
 
     def test_epoch_end(self, outputs):
-        label = torch.cat([x["label"] for x in outputs])
-        pred = torch.cat([x["out"] for x in outputs])
-        kappa, f1, auc, final_score = self.ODIR_Metrics(label, pred)
+        label = np.concatenate([output["label"] for output in outputs])
+        pred = np.concatenate([output["out"] for output in outputs])
+        kappa, f1, auc, final_score, acc = self.ODIR_Metrics(label, pred)
+        self.log("kappa", np.round(kappa, 3))
+        self.log("f1", np.round(f1, 3))
+        self.log("auc", np.round(auc, 3))
+        self.log("final_score", np.round(final_score, 3))
+        self.log("acc", np.round(acc, 3))
 
 
+"""Trainer"""
 model = Resnet18Timm()
+lr_monitor = LearningRateMonitor(logging_interval="epoch")
+trainer = Trainer(
+    max_epochs=10,
+    accelerator="gpu",
+    devices=1,
+    precision=16,
+    callbacks=(lr_monitor),
+    fast_dev_run=True,
+)
+trainer.fit(model)
+trainer.test(model)
