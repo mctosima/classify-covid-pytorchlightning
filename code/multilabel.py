@@ -1,4 +1,4 @@
-'''import'''
+"""import"""
 from pytorch_lightning import seed_everything, LightningModule, Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor
 from torch.utils.data import DataLoader, Dataset
@@ -19,28 +19,39 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from matplotlib import pyplot as plt
 
-'''augmentation must same between both eyes'''
-aug = A.Compose([
-    A.Resize(256,256),
-    A.CenterCrop(224,222),
-    A.HorizontalFlip(),
-    A.VerticalFlip(),
-    A.ShiftScaleRotate(0.05,0.05,5),
-    A.RandomBrightnessContrast(),
-    A.CLAHE(),
-    A.CoarseDropout(),
-    A.Normalize(),
-    ToTensorV2(),
-],p=1.0, additional_targets={'image0':'image'})
+"""
+about the dataset:
+https://odir2019.grand-challenge.org
+"""
 
-'''Define the Path'''
-train_df = pd.read_csv('data/ocular/full_df.csv')
-train_path = 'data/ocular/ODIR-5K/ODIR-5K/Training_Images/'
-test_path = 'data/ocular/ODIR-5K/ODIR-5K/Testing_Images/'
+"""augmentation must same between both eyes"""
+aug = A.Compose(
+    [
+        A.Resize(256, 256),
+        A.CenterCrop(224, 222),
+        A.HorizontalFlip(),
+        A.VerticalFlip(),
+        A.ShiftScaleRotate(0.05, 0.05, 5),
+        A.RandomBrightnessContrast(),
+        A.CLAHE(),
+        A.CoarseDropout(),
+        A.Normalize(),
+        ToTensorV2(),
+    ],
+    p=1.0,
+    additional_targets={"image0": "image"},
+)
 
-'''DataReader'''
+"""Define the Path"""
+train_df = pd.read_csv("data/ocular/full_df.csv")
+train_path = "data/ocular/ODIR-5K/ODIR-5K/Training_Images/"
+test_path = "data/ocular/ODIR-5K/ODIR-5K/Testing_Images/"
+
+"""DataReader"""
+
+
 class DataReader(Dataset):
-    def __init__(self,df,path,transform=None):
+    def __init__(self, df, path, transform=None):
         super().__init__()
         self.df = df
         self.path = path
@@ -49,11 +60,11 @@ class DataReader(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self,index):
+    def __getitem__(self, index):
         # read id from dataframe and find the image path
-        sub_id = self.df.iloc[index,0]
-        left_path = os.path.join(self.path+str(sub_id)+'_left.jpg')
-        right_path = os.path.join(self.path+str(sub_id)+'_right.jpg')
+        sub_id = self.df.iloc[index, 0]
+        left_path = os.path.join(self.path + str(sub_id) + "_left.jpg")
+        right_path = os.path.join(self.path + str(sub_id) + "_right.jpg")
 
         # read image and convert to RGB
         left_img = cv2.imread(left_path)
@@ -62,21 +73,22 @@ class DataReader(Dataset):
         right_img = cv2.cvtColor(right_img, cv2.COLOR_BGR2RGB)
 
         # read labels from dataframe
-        labels = self.df.iloc[index,7:15].astype(int)
+        labels = self.df.iloc[index, 7:15].astype(int)
 
         # apply transformation
         if self.transform:
-            image = self.transform(image=left_img,image0=right_img)
-            left_eye = image['image']
-            right_eye = image['image0']
+            image = self.transform(image=left_img, image0=right_img)
+            left_eye = image["image"]
+            right_eye = image["image0"]
         return left_eye, right_eye, labels.to_numpy()
 
-train_data = DataReader(train_df,train_path,transform=aug)
-train_loader = DataLoader(train_data,shuffle=False,batch_size=16,num_workers=0)
-left,right,label = next(iter(train_loader))
+
+train_data = DataReader(train_df, train_path, transform=aug)
+train_loader = DataLoader(train_data, shuffle=False, batch_size=16, num_workers=0)
+left, right, label = next(iter(train_loader))
 
 
-'''Try to show the image'''
+"""Try to show the image"""
 # plt.figure(figsize=(16,16))
 # grid_img = torchvision.utils.make_grid(left,8,4)
 # plt.imshow(grid_img.permute(1,2,0))
@@ -87,9 +99,37 @@ left,right,label = next(iter(train_loader))
 # plt.imshow(grid_img.permute(1,2,0))
 # plt.savefig('junk2.png')
 
+"""
+Define the model
+The model: https://github.com/rwightman/pytorch-image-models by Ross Wightman
+"""
 
-'''
-about the dataset:
-https://odir2019.grand-challenge.org
-'''
+import timm
 
+
+class Resnet18(LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.model = timm.create_model("resnet18", pretrained=True)
+        self.fc1 = nn.Linear(2000, 1000)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(1000, 8)
+
+        # param
+        self.lr = 0.001
+        self.batch_size = 96
+        self.num_workers = 8
+        self.criterion = nn.BCEWithLogitsLoss()
+
+    def forward(self, left_image, right_image):
+        left = self.model(left_image)
+        right = self.model(right_image)
+        x = torch.cat((left, right), dim=1)
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.fc2(x)
+        return x
+
+    def focalloss(self, BCE, alpha=0.75, gamma=2):
+        loss = alpha * BCE + (1 - alpha) * BCE.mean()
+        return loss
