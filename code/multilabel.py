@@ -99,6 +99,13 @@ left, right, label = next(iter(train_loader))
 # plt.imshow(grid_img.permute(1,2,0))
 # plt.savefig('junk2.png')
 
+"""Split the data into train and val"""
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+
+train_df, val_df = train_test_split(train_df, test_size=0.2, random_state=21)
+
+
 """
 Define the model
 The model: https://github.com/rwightman/pytorch-image-models by Ross Wightman
@@ -107,7 +114,7 @@ The model: https://github.com/rwightman/pytorch-image-models by Ross Wightman
 import timm
 
 
-class Resnet18(LightningModule):
+class Resnet18Timm(LightningModule):
     def __init__(self):
         super().__init__()
         self.model = timm.create_model("resnet18", pretrained=True)
@@ -119,9 +126,16 @@ class Resnet18(LightningModule):
         self.lr = 0.001
         self.batch_size = 96
         self.num_workers = 8
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = nn.BCEWithLogitsLoss(reduction="none")
 
     def forward(self, left_image, right_image):
+        """
+        Explanation:
+            - each eye image passed to the model and the output is concatenated
+            - the output is passed to the fully connected layer with 2000 neurons input (since the model has 2 eyes)
+            - the last layer has 1000 neurons and the output is passed to the fully connected layer with 8 neurons
+        """
+
         left = self.model(left_image)
         right = self.model(right_image)
         x = torch.cat((left, right), dim=1)
@@ -131,5 +145,84 @@ class Resnet18(LightningModule):
         return x
 
     def focalloss(self, BCE, alpha=0.75, gamma=2):
-        loss = alpha * BCE + (1 - alpha) * BCE.mean()
-        return loss
+        BCE_EXP = torch.exp(-BCE)
+        focal_loss = alpha * (1 - BCE_EXP) ** gamma * BCE
+        return focal_loss.mean()
+
+    def configure_optimizers(self):
+        opt = torch.Adam(self.parameters(), lr=self.lr)
+        scheduler = CosineAnnealingWarmRestarts(
+            opt, T_0=5, T_mult=1, eta_min=1e-5, last_epoch=-1
+        )
+        return {"optimizer": opt, "lr_scheduler": scheduler}
+
+    def train_dataloader(self):
+        dl = DataLoader(
+            DataReader(train_df, train_path, transform=aug),
+            shuffle=True,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+        )
+        return dl
+
+    def training_step(self, batch, batch_idx):
+        left, right, label = batch
+        pred = self(left, right)
+        loss = self.focalloss(self.criterion(pred, label))
+        self.log("train_loss", loss, on_epoch=True, on_step=False)
+
+    def training_epoch_end(self, outputs):
+        pass
+
+    def val_dataloader(self):
+        dl = DataLoader(
+            DataReader(val_df, train_path, transform=aug),
+            shuffle=True,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+        )
+        return dl
+
+    def val_step(self, batch, batch_idx):
+        left, right, label = batch
+        pred = self(left, right)
+        loss = self.focalloss(self.criterion(pred, label))
+        self.log("val_loss", loss, on_epoch=True, on_step=False)
+
+    def val_epoch_end(self, outputs):
+        pass
+
+    def test_dataloader(self):
+        dl = DataLoader(
+            DataReader(val_df, train_path, transform=aug),
+            shuffle=True,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+        )
+        return dl
+
+    def test_step(self, batch, batch_idx):
+        left, right, label = batch
+        out = self(left, right)
+        return {
+            "label": label.detach().cpu().numpy(),
+            "out": out.detach().cpu().numpy(),
+        }
+
+    def ODIR_Metrics(self, gt_data, pr_data):
+        th = 0.5
+        gt = gt_data.flatten()
+        pr = pr_data.flatten()
+        kappa = metrics.cohen_kappa_score(gt, pr > th)
+        f1 = metrics.f1_score(gt, pr > th, average="micro")
+        auc = metrics.roc_auc_score(gt, pr)
+        final_score = (kappa + f1 + auc) / 3
+        return kappa, f1, auc, final_score
+
+    def test_epoch_end(self, outputs):
+        label = torch.cat([x["label"] for x in outputs])
+        pred = torch.cat([x["out"] for x in outputs])
+        kappa, f1, auc, final_score = self.ODIR_Metrics(label, pred)
+
+
+model = Resnet18Timm()
