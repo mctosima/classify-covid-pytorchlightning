@@ -1,6 +1,7 @@
 """Import"""
 from pytorch_lightning import seed_everything, LightningModule, Trainer
-from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.callbacks import LearningRateMonitor, RichProgressBar
+from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBarTheme
 from torch.utils.data import DataLoader, Dataset
 from pytorch_lightning.loggers import WandbLogger
 
@@ -89,6 +90,8 @@ img, label = next(iter(train_loader))
 
 
 """Create Class Model"""
+
+
 class Resnet18TimModified(LightningModule):
     def __init__(self, train_df, val_df):
         super().__init__()
@@ -106,8 +109,8 @@ class Resnet18TimModified(LightningModule):
         self.lr = 0.001
         self.batch_size = 32
         self.num_workers = 8
-        
-        self.acc = torchmetrics.Accuracy(threshold=10.0)
+
+        self.acc = torchmetrics.Accuracy()
 
         # loss function
         self.criterion = nn.L1Loss()
@@ -125,7 +128,7 @@ class Resnet18TimModified(LightningModule):
     def train_dataloader(self):
         dl = DataLoader(
             DataReader(self.train_df, path, transform=aug),
-            batch_size = self.batch_size,
+            batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -147,7 +150,7 @@ class Resnet18TimModified(LightningModule):
     def val_dataloader(self):
         dl = DataLoader(
             DataReader(self.val_df, path, transform=aug),
-            batch_size = self.batch_size,
+            batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=True,
@@ -161,15 +164,28 @@ class Resnet18TimModified(LightningModule):
         acc = self.acc(pred.int(), label.int())
         self.log("val/loss", loss, on_step=False, on_epoch=True)
         self.log("val/acc", acc, on_step=False, on_epoch=True)
-        
-        return {"loss": loss, "acc": acc}
 
+        return {"loss": loss, "acc": acc}
 
 
 """Train Fit"""
 model = Resnet18TimModified(train_df, val_df)
-wandb_logger = WandbLogger(project="covid-inf_percentage", log_model=True)
+wandb_logger = WandbLogger(project="covid-inf_percentage", log_model=False)
 wandb_logger.watch(model)
+
+progress_bar = RichProgressBar(
+    theme=RichProgressBarTheme(
+        description="green_yellow",
+        progress_bar="green1",
+        progress_bar_finished="green1",
+        progress_bar_pulse="#6206E0",
+        batch_progress="green_yellow",
+        time="grey82",
+        processing_speed="grey82",
+        metrics="grey82",
+    )
+)
+
 trainer = Trainer(
     max_epochs=10,
     accelerator="gpu",
@@ -179,6 +195,7 @@ trainer = Trainer(
     logger=wandb_logger,
     log_every_n_steps=15,
     fast_dev_run=False,
+    callbacks=progress_bar,
 )
 
 trainer.fit(model)
