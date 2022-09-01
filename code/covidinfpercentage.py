@@ -107,7 +107,7 @@ class Resnet18TimModified(LightningModule):
         self.batch_size = 32
         self.num_workers = 8
         
-        self.acc = torchmetrics.Accuracy()
+        self.acc = torchmetrics.Accuracy(threshold=10.0)
 
         # loss function
         self.criterion = nn.L1Loss()
@@ -168,7 +168,7 @@ class Resnet18TimModified(LightningModule):
 
 """Train Fit"""
 model = Resnet18TimModified(train_df, val_df)
-wandb_logger = WandbLogger(project="covid-inf_percentage", log_model=False)
+wandb_logger = WandbLogger(project="covid-inf_percentage", log_model=True)
 wandb_logger.watch(model)
 trainer = Trainer(
     max_epochs=10,
@@ -177,7 +177,7 @@ trainer = Trainer(
     precision=16,
     deterministic=True,
     logger=wandb_logger,
-    log_every_n_steps=10,
+    log_every_n_steps=15,
     fast_dev_run=False,
 )
 
